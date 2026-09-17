@@ -1,0 +1,55 @@
+[project]
+name = "fine-tuning-experimentations"
+version = "0.1.0"
+description = "Experiments for local LLM fine-tuning and inference"
+readme = "README.md"
+authors = [
+    { name = "Patrick Motylinski", email = "patrick.motylinski@aveva.com" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "hydra-core>=1.3,<2",
+    "langchain>=1.4,<2",
+    "langchain-ollama>=1.1,<2",
+    "langgraph>=1.2,<2",
+    "ollama>=0.6,<1",
+    "pydantic>=2.13,<3",
+    "python-dotenv>=1.2,<2",
+    "pyyaml>=6,<7",
+    "rich>=15,<16",
+    "tqdm>=4.70,<5",
+]
+
+[dependency-groups]
+dev = [
+    "black>=26.5,<27",
+    "coverage>=7.16,<8",
+    "pytest>=9.1,<10",
+    "pytest-cov>=7.1,<8",
+    "ruff>=0.16,<1",
+]
+
+[project.optional-dependencies]
+hf = [
+    "accelerate",
+    "datasets",
+    "peft",
+    "safetensors",
+    "sentencepiece",
+    "torch",
+    "transformers",
+    "trl",
+]
+mlx = [
+    "datasets",
+    "huggingface-hub",
+    "mlx-lm[train]",
+    "safetensors",
+]
+
+[project.scripts]
+fine-tuning-experimentations = "fine_tuning_experimentations:main"
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
