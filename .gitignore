@@ -14,8 +14,13 @@ dist/
 
 # Virtual environments
 .venv/
+.venv-hf/
+.venv-mlx/
 venv/
 env/
+
+# Training/run artifacts
+outputs/
 
 # Testing / coverage
 .pytest_cache/
