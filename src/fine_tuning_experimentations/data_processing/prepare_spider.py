@@ -220,7 +220,7 @@ def build_record(
 
 
 def build_split(
-    split: "SplitConfig",
+    split: SplitConfig,
     raw_dir: Path,
     schema_by_db: dict[str, str],
     system_prompt: str,
@@ -276,7 +276,6 @@ def write_jsonl(records: Sequence[CanonicalRecord], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     lines = (json.dumps(record.to_dict(), ensure_ascii=False) for record in records)
     output_path.write_text("\n".join(lines) + "\n")
-    return None
 
 
 def write_manifest(
@@ -307,10 +306,9 @@ def write_manifest(
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    return None
 
 
-def prepare_spider(cfg: "PrepareSpiderConfig") -> dict[str, list[CanonicalRecord]]:
+def prepare_spider(cfg: PrepareSpiderConfig) -> dict[str, list[CanonicalRecord]]:
     """Build and write canonical Spider JSONL splits from raw data.
 
     Args:

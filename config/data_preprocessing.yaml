@@ -1,0 +1,13 @@
+# config/prepare_spider.yaml
+defaults:
+  - prepare_spider_schema
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+
+paths:
+  raw_dir: data/spider_data
+prompt:
+  template_version: spider-prompt-v1
