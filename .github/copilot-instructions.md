@@ -1,5 +1,63 @@
 # Copilot Instructions
 
+## Project overview
+
+Experimentation repo for fine-tuning small LLMs locally on Apple Silicon, using the Spider
+text-to-SQL dataset. No single trainer abstraction: three backend paths share one data
+pipeline and stay separate at training/serving.
+
+- `hf_mps` — Hugging Face Transformers + PEFT LoRA on MPS. Portability/reference path.
+- `mlx` — MLX-LM. Primary native Apple Silicon path.
+- `unsloth` — optional comparison path. Keep isolated, do not run in `.venv`/`.venv-hf`.
+
+Full design rationale: `docs/local-llm-finetuning-m5-max.md` (overall backend split),
+`docs/spider-data-preprocessing-strategy.md` (canonical data contract),
+`docs/spider-hf-mps-finetuning-plan.md` (hf_mps fine-tuning plan). Read these before
+adding pipeline or training code — do not re-derive the architecture from source alone,
+most backend modules (`mlx/`, `unsloth/`, `hf_mps/train.py`, `data_processing/cli.py`,
+`data_processing/validate_spider.py`, `data_processing/formats/*.py`) are still empty
+stubs; the docs describe the intended shape before it exists in code.
+
+## Architecture
+
+- **Canonical data layer** (`src/fine_tuning_experimentations/data_processing/prepare_spider.py`):
+  raw Spider JSON (`data/spider_data/*.json`) → backend-neutral canonical JSONL
+  (`data/processed/spider/canonical/{train,valid}.jsonl`). Do not skip this and format
+  data for one backend directly — canonical fields (`id`, `db_id`, `schema`, `question`,
+  `sql`, `messages`, `format_version`) must stay backend-neutral and versioned.
+- **Backend format adapters** (`data_processing/formats/{hf,mlx,unsloth}.py`): thin,
+  one-way transforms from canonical JSONL to each backend's expected shape
+  (tokenization, chat templates, packing, and other backend-specific concerns belong
+  here or later in the backend's own trainer, never in the canonical layer).
+- **Config** (`src/fine_tuning_experimentations/config/schema.py`): Hydra structured
+  configs (`PathsConfig`, `PromptConfig`, `SplitConfig`, `PrepareSpiderConfig`)
+  registered via `register_configs(store)`. `PromptConfig.system_prompt` sources from
+  `prepare_spider.SYSTEM_PROMPT` — the prompt contract must stay in one place and be
+  versioned via `template_version`/`format_version`, not duplicated per backend.
+- Never mix train/validation `db_id`s (Spider is cross-domain; leaking a database across
+  splits invalidates the eval). Never use `data/spider_data/test*` files for training.
+
+## Build, test, and lint
+
+Base env is managed by `uv` (Python 3.12, pinned in `.python-version`). `hf` and `mlx`
+extras live in separate envs (`.venv-hf`, `.venv-mlx`) per the backend-isolation rule
+above; Unsloth gets its own environment too — never install backend extras into the
+base `.venv`.
+
+```bash
+uv sync                        # base deps + dev group
+uv sync --extra hf             # into .venv-hf, for hf_mps work
+uv sync --extra mlx            # into .venv-mlx, for mlx work
+
+uv run pytest                              # full test suite
+uv run pytest tests/unit/data/test_x.py::test_name   # single test
+uv run ruff check .            # lint (no repo-specific ruff config; defaults apply)
+uv run black .                 # format
+```
+
+`tests/unit/{data,backends/hf_mps,backends/mlx}` exist as empty placeholder directories —
+create `conftest.py` per the fixture rules below as soon as the first test lands there.
+
 # Copilot working agreement
 
 ## Epistemic behaviour
