@@ -17,20 +17,11 @@ from fine_tuning_experimentations.config.train_schema import (
     register_train_configs,
 )
 
+from fine_tuning_experimentations.hf_mps.device import resolve_device, resolve_dtype
+
 logger = logging.getLogger(__name__)
 
 register_train_configs(ConfigStore.instance())
-
-
-def resolve_device() -> str:
-    """Pick the best available torch device for hf_mps training.
-
-    Returns:
-        "mps" if Apple Silicon acceleration is available, else "cpu".
-    """
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    return device
-
 
 def load_canonical_datasets(train_path: str, valid_path: str) -> tuple:
     """Load canonical train/valid JSONL splits as Hugging Face datasets.
@@ -92,6 +83,7 @@ def main(cfg: TrainConfig) -> None:
         None.
     """
     device = resolve_device()
+    dtype = resolve_dtype(device)
     logger.info("Using device: %s", device)
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.base_model_id, revision=cfg.model.revision)
@@ -101,7 +93,7 @@ def main(cfg: TrainConfig) -> None:
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model.base_model_id,
         revision=cfg.model.revision,
-        torch_dtype=torch.bfloat16 if device == "mps" else torch.float32,
+        torch_dtype=dtype,
     ).to(device)
 
     train_dataset, valid_dataset = load_canonical_datasets(cfg.data.train_path, cfg.data.valid_path)
@@ -118,7 +110,8 @@ def main(cfg: TrainConfig) -> None:
         logging_steps=cfg.train.logging_steps,
         save_strategy="epoch",
         eval_strategy="epoch",
-        bf16=(device == "mps"),
+        bf16=(dtype == torch.bfloat16),
+        fp16=(dtype == torch.float16),
         max_length=cfg.train.max_seq_length,
         dataset_text_field="text",
         report_to=[],
