@@ -33,6 +33,7 @@ dev = [
 hf = [
     "accelerate",
     "datasets",
+    "gradio",
     "peft",
     "safetensors",
     "sentencepiece",
