@@ -1,0 +1,11 @@
+defaults:
+  - train_schema
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+
+model:
+  base_model_id: Qwen/Qwen2.5-1.5B-Instruct
+  revision: main
