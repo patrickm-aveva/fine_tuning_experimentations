@@ -1,21 +1,22 @@
 # EC2 GPU Python Environment Setup
 
-This guide configures an Ubuntu 24.04 NVIDIA GPU EC2 instance with SSH access, NVIDIA Server Driver 580, `uv`, Python 3.12, GPU-enabled PyTorch, and authenticated access to a private GitHub repository.
+This guide records the setup of an Ubuntu 24.04 GPU-backed EC2 instance for private GitHub access, NVIDIA Server Driver 580, Docker GPU workloads, `uv`, and Python development.
 
-## Environment used in this guide
+## Confirmed environment
 
-- EC2 host: `ec2-16-171-11-214.eu-north-1.compute.amazonaws.com`
 - EC2 user: `ubuntu`
+- EC2 host: `ec2-16-171-11-214.eu-north-1.compute.amazonaws.com`
 - Local EC2 key: `~/.ssh/pm_g5xl_eu-north-1_1.pem`
-- GitHub repository: `patrickm-aveva/fine_tuning_experimentations`
+- Repository: `patrickm-aveva/fine_tuning_experimentations`
+- GPU: NVIDIA A10G, 23,028 MiB
+- NVIDIA driver: 580.178.04
+- Docker: 29.1.3
 
-Commands identified as **local** run on the Mac. Other commands run on the EC2 instance.
+Commands run on the EC2 instance unless marked **Mac**.
 
 ---
 
-## 1. Connect to the EC2 instance
-
-On the Mac:
+## 1. Connect from the Mac
 
 ```bash
 chmod 400 ~/.ssh/pm_g5xl_eu-north-1_1.pem
@@ -24,13 +25,9 @@ ssh -i ~/.ssh/pm_g5xl_eu-north-1_1.pem \
   ubuntu@ec2-16-171-11-214.eu-north-1.compute.amazonaws.com
 ```
 
-Always specify the key path. A filename without a path is resolved relative to the current directory.
+Always provide the key path. A bare filename is resolved relative to the current directory.
 
----
-
-## 2. Confirm Ubuntu and the NVIDIA GPU
-
-On the instance:
+## 2. Confirm the operating system and GPU
 
 ```bash
 cat /etc/os-release
@@ -38,60 +35,38 @@ uname -m
 lspci | grep -i nvidia
 ```
 
-Expected results:
+Do not continue if the instance does not expose an NVIDIA GPU.
 
-- Ubuntu 24.04
-- Usually `x86_64`
-- At least one NVIDIA device
-
-If no NVIDIA device appears, verify that the EC2 instance type exposes an NVIDIA GPU before continuing.
-
----
-
-## 3. Update Ubuntu and install prerequisites
+## 3. Install system prerequisites
 
 ```bash
 sudo apt update
 sudo apt upgrade -y
 sudo apt install -y \
-  build-essential \
-  curl \
-  git \
-  pkg-config \
-  ca-certificates \
-  ubuntu-drivers-common \
-  linux-headers-$(uname -r)
+  build-essential curl git pkg-config ca-certificates \
+  ubuntu-drivers-common linux-headers-$(uname -r)
 ```
 
-If the upgrade installed a newer kernel, reboot:
+If a newer kernel was installed:
 
 ```bash
 sudo reboot
 ```
 
-Reconnect from the Mac using the SSH command in section 1.
-
----
+Reconnect using the command in section 1.
 
 ## 4. Install NVIDIA Server Driver 580
-
-Check that the server package is available:
 
 ```bash
 sudo ubuntu-drivers list --gpgpu
 apt-cache policy nvidia-driver-580-server
-```
-
-Install the complete driver package:
-
-```bash
 sudo apt install -y nvidia-driver-580-server
 sudo reboot
 ```
 
-Do not install only `nvidia-utils-580-server`. The complete driver package installs the driver stack and matching utilities. Do not mix Ubuntu packages with NVIDIA `.run` installers.
+Do not install only `nvidia-utils-580-server`, and do not mix Ubuntu packages with NVIDIA `.run` installers.
 
-Reconnect, then verify:
+After reconnecting:
 
 ```bash
 nvidia-smi
@@ -99,44 +74,23 @@ cat /proc/driver/nvidia/version
 lsmod | grep nvidia
 ```
 
-The reported driver version should begin with `580.`. Do not continue with GPU framework installation until `nvidia-smi` works.
+The driver version should begin with `580.`.
 
----
+## 5. Configure private GitHub access
 
-## 5. Configure GitHub SSH access
-
-The EC2 login key and a GitHub authentication key serve different purposes. The EC2 private key authenticates the Mac to AWS. The instance needs its own key that GitHub associates with the GitHub account or repository.
-
-The first connection to GitHub may display this prompt:
-
-```text
-The authenticity of host 'github.com (...)' can't be established.
-Are you sure you want to continue connecting (yes/no/[fingerprint])?
-```
-
-Before accepting a host key, compare the displayed fingerprint with GitHub's published SSH host-key fingerprints. Once accepted, the host is stored in `~/.ssh/known_hosts`.
-
-### 5.1 Create a dedicated GitHub key on the instance
-
-Run as `ubuntu`, without `sudo`:
+The EC2 login key authenticates the Mac to EC2. Create a separate key on the instance for GitHub.
 
 ```bash
 ssh-keygen -t ed25519 \
   -C "ec2-eu-north-1-fine-tuning" \
   -f ~/.ssh/github_ed25519
-```
 
-Choose whether to set a passphrase. A passphrase provides additional protection but requires an SSH agent or interactive entry.
-
-Set restrictive permissions:
-
-```bash
 chmod 700 ~/.ssh
 chmod 600 ~/.ssh/github_ed25519
 chmod 644 ~/.ssh/github_ed25519.pub
 ```
 
-### 5.2 Configure SSH to use the dedicated key
+Configure SSH:
 
 ```bash
 cat >> ~/.ssh/config <<'EOF'
@@ -150,9 +104,7 @@ EOF
 chmod 600 ~/.ssh/config
 ```
 
-If `~/.ssh/config` already contains a `Host github.com` block, edit that block rather than adding a duplicate.
-
-### 5.3 Add the public key to GitHub
+If a `Host github.com` block already exists, edit it instead of adding another.
 
 Display the public key:
 
@@ -160,57 +112,178 @@ Display the public key:
 cat ~/.ssh/github_ed25519.pub
 ```
 
-Copy the entire single line beginning with `ssh-ed25519`.
+Add that public key in GitHub under **Settings > SSH and GPG keys**. Never upload the private key.
 
-In GitHub:
-
-1. Open **Settings**.
-2. Select **SSH and GPG keys**.
-3. Select **New SSH key**.
-4. Enter a descriptive title, such as `EC2 eu-north-1 fine-tuning`.
-5. Select **Authentication Key**.
-6. Paste the public key.
-7. Save it.
-
-Add only `~/.ssh/github_ed25519.pub`. Never copy, upload, or commit the private key `~/.ssh/github_ed25519`.
-
-If the key should grant access only to this repository rather than the entire account, add the public key as a repository deploy key instead. Write access is unnecessary for cloning and pulling.
-
-### 5.4 Test GitHub authentication
+Test and clone:
 
 ```bash
 ssh -T git@github.com
-```
-
-A successful response identifies the GitHub account and states that authentication succeeded.
-
-If it fails, use verbose diagnostics:
-
-```bash
-ssh -i ~/.ssh/github_ed25519 -vT git@github.com
-```
-
-Do not run Git commands with `sudo`; root uses a different home directory, SSH configuration, and key set.
-
-### 5.5 Clone the repository
-
-```bash
-cd ~/projects
+mkdir -p ~/Projects
+cd ~/Projects
 git clone git@github.com:patrickm-aveva/fine_tuning_experimentations.git
 cd fine_tuning_experimentations
-```
-
-Verify the remote:
-
-```bash
 git remote -v
 ```
 
----
+Do not run Git commands with `sudo`.
 
-## 6. Install uv
+## 6. Copy local data to the instance
 
-Install `uv` as the normal `ubuntu` user:
+Run `scp` on the **Mac**, not inside the EC2 SSH session.
+
+Copy a directory recursively into the repository:
+
+```bash
+scp -i ~/.ssh/pm_g5xl_eu-north-1_1.pem -r \
+  /path/to/local/data \
+  ubuntu@ec2-16-171-11-214.eu-north-1.compute.amazonaws.com:~/Projects/fine_tuning_experimentations/
+```
+
+Example:
+
+```bash
+scp -i ~/.ssh/pm_g5xl_eu-north-1_1.pem -r \
+  ~/Documents/training_data \
+  ubuntu@ec2-16-171-11-214.eu-north-1.compute.amazonaws.com:~/Projects/fine_tuning_experimentations/data/
+```
+
+Verify on the instance:
+
+```bash
+ls -lah ~/Projects/fine_tuning_experimentations/data
+```
+
+For repeated transfers, `rsync` is preferable because it can transfer only changed files:
+
+```bash
+rsync -av --progress \
+  -e "ssh -i ~/.ssh/pm_g5xl_eu-north-1_1.pem" \
+  /path/to/local/data/ \
+  ubuntu@ec2-16-171-11-214.eu-north-1.compute.amazonaws.com:~/Projects/fine_tuning_experimentations/data/
+```
+
+The trailing slash on the local source copies the directory contents rather than the containing directory itself.
+
+## 7. Install Docker
+
+```bash
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+```
+
+Verify:
+
+```bash
+docker --version
+sudo systemctl is-active docker
+```
+
+## 8. Install NVIDIA Container Toolkit
+
+Install repository prerequisites:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  ca-certificates curl gnupg2
+```
+
+Add NVIDIA's production repository:
+
+```bash
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor \
+      -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+```
+
+Install and verify:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+nvidia-ctk --version
+```
+
+Configure Docker:
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+sudo systemctl is-active docker
+```
+
+Test GPU access inside a container:
+
+```bash
+sudo docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+```
+
+The successful test on this instance reported NVIDIA A10G, driver 580.178.04, and 23,028 MiB GPU memory.
+
+The CUDA version displayed by `nvidia-smi` is the maximum CUDA driver API level supported by the driver. It does not prove that the corresponding CUDA Toolkit is installed on the host or in every container.
+
+## 9. Permit the current user to run Docker
+
+By default, Docker's Unix socket may reject commands issued without `sudo`:
+
+```text
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+```
+
+Add the current user to the `docker` group:
+
+```bash
+sudo usermod -aG docker "$USER"
+```
+
+Activate the new group membership in the current shell:
+
+```bash
+newgrp docker
+```
+
+Alternatively, disconnect and reconnect over SSH.
+
+Verify access without `sudo`:
+
+```bash
+docker run --rm hello-world
+docker run --rm --gpus all ubuntu nvidia-smi
+```
+
+Membership in the `docker` group effectively grants root-level control of the host. Grant it only to trusted users.
+
+## 10. Run the project container
+
+From the repository root:
+
+```bash
+cd ~/Projects/fine_tuning_experimentations
+mkdir -p data/processed outputs
+
+docker run --rm --gpus all \
+  -v "$(pwd)/data/processed:/app/data/processed" \
+  -v "$(pwd)/outputs:/app/outputs" \
+  fine-tuning-experimentations:cuda
+```
+
+The bind mounts preserve processed data and outputs on the EC2 host after the container exits.
+
+If the image does not exist locally, inspect the repository for its intended build command before running it:
+
+```bash
+ls -la
+find . -maxdepth 2 -iname 'Dockerfile*' -o -iname 'compose*.yml' -o -iname 'compose*.yaml'
+```
+
+## 11. Install uv
+
+Install as the normal `ubuntu` user:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -218,99 +291,52 @@ source "$HOME/.local/bin/env"
 uv --version
 ```
 
-If the environment file is unavailable or `uv` is not found:
+If `uv` is not found:
 
 ```bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
-uv --version
 ```
 
----
+## 12. Set up the Python project
 
-## 7. Set up the Python project
-
-If the cloned repository already contains `pyproject.toml` and `uv.lock`, use its existing configuration:
+If the repository already contains `pyproject.toml` and `uv.lock`:
 
 ```bash
-cd ~/projects/fine_tuning_experimentations
+cd ~/Projects/fine_tuning_experimentations
 uv sync
 uv run python --version
 ```
 
-If it does not yet contain a uv project configuration:
+Do not run `uv init` in an already configured project.
+
+If no uv configuration exists:
 
 ```bash
-cd ~/projects/fine_tuning_experimentations
+cd ~/Projects/fine_tuning_experimentations
 uv init
 uv python install 3.12
 uv python pin 3.12
 uv sync
 ```
 
-For a separate new project:
+Avoid `sudo pip install`.
+
+## 13. Optional GPU-enabled PyTorch setup
+
+Use the CUDA wheel channel required by the project. Example for CUDA 12.6 wheels:
 
 ```bash
-mkdir -p ~/projects/gpu-python
-cd ~/projects/gpu-python
-uv init
-uv python install 3.12
-uv python pin 3.12
-uv sync
-```
-
-`uv` uses `pyproject.toml` for project metadata and direct dependencies, `.python-version` for the selected interpreter, `.venv` for the isolated environment, and `uv.lock` for exact resolved dependencies.
-
----
-
-## 8. Add baseline Python dependencies
-
-Only add packages that are not already declared by the repository:
-
-```bash
-uv add \
-  numpy \
-  scipy \
-  pandas \
-  scikit-learn \
-  matplotlib \
-  jupyterlab \
-  ipykernel \
-  tqdm \
-  psutil \
-  rich
-
-uv add --dev pytest ruff mypy
-```
-
-Avoid `sudo pip install`. Keep application dependencies inside the uv-managed project.
-
----
-
-## 9. Install GPU-enabled PyTorch
-
-Select the CUDA wheel channel supported by the intended PyTorch release. For the CUDA 12.6 wheel channel:
-
-```bash
-uv pip install \
-  torch \
-  torchvision \
-  torchaudio \
+uv pip install torch torchvision torchaudio \
   --index-url https://download.pytorch.org/whl/cu126
 ```
 
-For a reproducible project, configure the chosen PyTorch index in `pyproject.toml` rather than relying only on an ad hoc `uv pip install` command.
-
----
-
-## 10. Verify PyTorch GPU access
+Verify GPU access:
 
 ```bash
 uv run python - <<'PY'
-import sys
 import torch
 
-print("Python:", sys.version)
 print("PyTorch:", torch.__version__)
 print("PyTorch CUDA runtime:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
@@ -319,134 +345,84 @@ if not torch.cuda.is_available():
     raise SystemExit("PyTorch cannot access CUDA")
 
 print("GPU:", torch.cuda.get_device_name(0))
-print("GPU count:", torch.cuda.device_count())
-
 x = torch.rand(2048, 2048, device="cuda")
-y = x @ x
-print("GPU matrix test result:", y.mean().item())
+print("GPU test:", (x @ x).mean().item())
 PY
 ```
 
-The essential results are:
+A system CUDA Toolkit is not required for ordinary use of CUDA-enabled PyTorch wheels. It is required when compiling custom CUDA code or extensions that need `nvcc`.
 
-```text
-CUDA available: True
-GPU: <GPU model>
-```
-
----
-
-## 11. Decide whether the CUDA Toolkit is required
-
-The NVIDIA driver and a CUDA-enabled PyTorch wheel are sufficient for normal PyTorch execution.
-
-```bash
-nvcc --version
-```
-
-A missing `nvcc` is not a problem if the PyTorch GPU test succeeds. Install a system CUDA Toolkit only when the project must compile custom CUDA code or extensions, invoke `nvcc`, or build a package that explicitly requires a local Toolkit.
-
----
-
-## 12. Final health check
-
-From the project directory:
+## 14. Final checks
 
 ```bash
 nvidia-smi
+docker run --rm --gpus all ubuntu nvidia-smi
 ssh -T git@github.com
 uv --version
 uv run python --version
-uv run python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))'
 ```
-
-A working setup should show:
-
-- NVIDIA driver version `580.x`
-- Successful GitHub authentication
-- A valid `uv` version
-- Python 3.12, unless the repository pins another supported version
-- `torch.cuda.is_available()` returning `True`
-- The expected EC2 GPU model
-
----
 
 ## Troubleshooting
 
-### SSH reports that the EC2 identity file is inaccessible
+### EC2 key cannot be found
 
-Use the complete local path:
+Use the complete local key path:
 
 ```bash
 ssh -i ~/.ssh/pm_g5xl_eu-north-1_1.pem \
   ubuntu@ec2-16-171-11-214.eu-north-1.compute.amazonaws.com
 ```
 
-### GitHub reports `Permission denied (publickey)`
-
-Check the key files and permissions:
+### GitHub rejects the key
 
 ```bash
-ls -la ~/.ssh
-ssh-add -l -E sha256
 ssh -i ~/.ssh/github_ed25519 -vT git@github.com
-```
-
-Confirm that the public key shown by the following command is registered with the GitHub account or repository that can access `patrickm-aveva/fine_tuning_experimentations`:
-
-```bash
 cat ~/.ssh/github_ed25519.pub
 ```
 
-### `nvidia-smi` is not found
+Confirm that the displayed public key is registered with a GitHub account or repository that can access the private repository.
+
+### `nvidia-smi` is missing
 
 ```bash
-dpkg -l | grep -E 'nvidia-driver-580-server|nvidia-utils-580-server'
 sudo apt update
 sudo apt install -y nvidia-driver-580-server
 sudo reboot
 ```
 
-### `nvidia-smi` cannot communicate with the driver
+### `nvidia-ctk` is missing
 
 ```bash
-uname -r
-dpkg -l "linux-headers-$(uname -r)"
-lsmod | grep nvidia
-modinfo nvidia | head
-sudo dmesg | grep -iE 'nvidia|nouveau' | tail -100
+dpkg -l | grep nvidia-container-toolkit
 ```
+
+Complete section 8 if the package is absent.
+
+### Docker commands require `sudo`
+
+```bash
+id
+getent group docker
+ls -l /var/run/docker.sock
+```
+
+The user must belong to the `docker` group, and a new login or `newgrp docker` is required before the current shell sees the membership.
 
 ### PyTorch reports `CUDA available: False`
 
-First verify the host driver:
-
 ```bash
 nvidia-smi
+uv run python -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())'
 ```
 
-Then inspect PyTorch:
-
-```bash
-uv run python - <<'PY'
-import torch
-print("PyTorch:", torch.__version__)
-print("Compiled CUDA runtime:", torch.version.cuda)
-print("CUDA available:", torch.cuda.is_available())
-PY
-```
-
-If `torch.version.cuda` is `None`, a CPU-only PyTorch build is installed.
-
----
+If `torch.version.cuda` is `None`, the environment contains a CPU-only PyTorch build.
 
 ## References
 
 - [Ubuntu Server NVIDIA driver installation](https://ubuntu.com/server/docs/how-to/graphics/install-nvidia-drivers/)
-- [NVIDIA Driver Installation Guide for Ubuntu](https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/ubuntu.html)
-- [GitHub SSH connection testing](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/testing-your-ssh-connection)
-- [GitHub SSH public-key troubleshooting](https://docs.github.com/en/authentication/troubleshooting-ssh/error-permission-denied-publickey)
-- [GitHub SSH host-key fingerprints](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints)
+- [NVIDIA Container Toolkit installation](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- [NVIDIA Container Toolkit sample workload](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/sample-workload.html)
+- [Docker Linux post-installation](https://docs.docker.com/engine/install/linux-postinstall/)
+- [GitHub SSH troubleshooting](https://docs.github.com/en/authentication/troubleshooting-ssh/error-permission-denied-publickey)
 - [Astral uv installation](https://docs.astral.sh/uv/getting-started/installation/)
-- [Astral uv project guide](https://docs.astral.sh/uv/guides/projects/)
 - [PyTorch installation selector](https://pytorch.org/get-started/locally/)

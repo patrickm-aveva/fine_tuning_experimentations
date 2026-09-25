@@ -98,11 +98,98 @@ it at a specific trained run with an override, since adapter output directories 
 ```
 
 ## Using Docker on a Cloud Instance
-NB! Currently untested. 
 
-## Cloud GPU setup (EC2)
+The [Dockerfile](Dockerfile) builds a CUDA image that runs `hf_mps.train` with the
+[config/train_cuda.yaml](config/train_cuda.yaml) config (quantized Qwen2.5-1.5B-Instruct LoRA
+fine-tune). It only bakes in `pyproject.toml`, `uv.lock`, `src`, `README.md`, and `config` — data
+and outputs are not copied into the image and must be mounted as volumes at run time.
 
-For running fine-tuning on an NVIDIA GPU EC2 instance instead of Docker, see
+### 1. Build the image
+
+From the repo root (needs `uv.lock` present):
+
+```bash
+docker build -t fine-tuning-experimentations:cuda .
+```
+
+### 2. Run it locally (requires an NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html))
+
+Mount the canonical data and the outputs directory so training data is available and results
+persist outside the container:
+
+```bash
+docker run --rm --gpus all \
+  -v "$(pwd)/data/processed:/app/data/processed" \
+  -v "$(pwd)/outputs:/app/outputs" \
+  fine-tuning-experimentations:cuda
+```
+
+Override Hydra config the same way as the local `train_cuda` runs, e.g. a quick smoke test:
+
+```bash
+docker run --rm --gpus all \
+  -v "$(pwd)/data/processed:/app/data/processed" \
+  -v "$(pwd)/outputs:/app/outputs" \
+  fine-tuning-experimentations:cuda \
+  --config-dir=config --config-name=train_cuda \
+  train.num_train_epochs=1 train.per_device_train_batch_size=1
+```
+
+### 3. Run it on a cloud GPU instance
+
+Provision and prepare the instance (NVIDIA driver, verified `nvidia-smi`) first — see
+[docs/ec2_gpu_python_setup.md](docs/ec2_gpu_python_setup.md) sections 1–4 for SSH access and driver
+install; Docker replaces the `uv`/PyTorch steps in sections 5–9 of that doc.
+
+On the instance:
+
+1. Install Docker Engine and the NVIDIA Container Toolkit (see the
+   [NVIDIA Container Toolkit install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)),
+   then configure the Docker runtime:
+
+   ```bash
+   sudo nvidia-ctk runtime configure --runtime=docker
+   sudo systemctl restart docker
+   ```
+
+2. Get the repo and data onto the instance, e.g.:
+
+   ```bash
+   git clone <this-repo-url> ~/fine_tuning_experimentations
+   rsync -avz -e "ssh -i ~/.ssh/<key>.pem" \
+     data/processed/ ubuntu@<instance-dns>:~/fine_tuning_experimentations/data/processed/
+   ```
+
+3. Build and run exactly as in steps 1–2 above, from `~/fine_tuning_experimentations`:
+
+   ```bash
+   docker build -t fine-tuning-experimentations:cuda .
+   docker run --rm --gpus all \
+     -v "$(pwd)/data/processed:/app/data/processed" \
+     -v "$(pwd)/outputs:/app/outputs" \
+     fine-tuning-experimentations:cuda
+   ```
+
+4. Verify GPU visibility inside the container before a full run. The image's `ENTRYPOINT` is
+   fixed to `hf_mps.train`, so override it explicitly to run a plain check:
+
+   ```bash
+   docker run --rm --gpus all --entrypoint nvidia-smi fine-tuning-experimentations:cuda
+   ```
+
+5. Copy results back after training:
+
+   ```bash
+   rsync -avz -e "ssh -i ~/.ssh/<key>.pem" \
+     ubuntu@<instance-dns>:~/fine_tuning_experimentations/outputs/ outputs/
+   ```
+
+NB! Not yet run end-to-end against a real GPU instance — build and driver/toolkit steps are
+untested in practice.
+
+## Cloud GPU setup (EC2, no Docker)
+
+For running fine-tuning directly with `uv` on an NVIDIA GPU EC2 instance instead of Docker, see
 [docs/ec2_gpu_python_setup.md](docs/ec2_gpu_python_setup.md) for the full walkthrough (SSH access,
 NVIDIA driver install, `uv`-managed Python env, GPU-enabled PyTorch, verification).
 
