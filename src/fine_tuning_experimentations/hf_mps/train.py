@@ -72,6 +72,49 @@ def build_lora_config(cfg: TrainConfig) -> LoraConfig:
     return lora_config
 
 
+def load_base_model(cfg: TrainConfig, device: str, dtype: torch.dtype):
+    """Load the base causal LM, optionally 4-bit quantized for QLoRA.
+
+    Args:
+        cfg: Resolved TrainConfig.
+        device: Torch device resolved for this run.
+        dtype: Compute dtype resolved for this run.
+
+    Returns:
+        The loaded base model, ready to be wrapped with a LoRA adapter.
+
+    Raises:
+        ValueError: If quantization is enabled on a non-CUDA device.
+    """
+    if cfg.quantization.enabled and device != "cuda":
+        raise ValueError("quantization.enabled requires a CUDA device; got: " + device)
+
+    if cfg.quantization.enabled:
+        from peft import prepare_model_for_kbit_training
+        from transformers import BitsAndBytesConfig
+
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=cfg.quantization.load_in_4bit,
+            bnb_4bit_quant_type=cfg.quantization.bnb_4bit_quant_type,
+            bnb_4bit_use_double_quant=cfg.quantization.bnb_4bit_use_double_quant,
+            bnb_4bit_compute_dtype=dtype,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            cfg.model.base_model_id,
+            revision=cfg.model.revision,
+            quantization_config=bnb_config,
+            device_map={"": 0},
+        )
+        model = prepare_model_for_kbit_training(model)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            cfg.model.base_model_id,
+            revision=cfg.model.revision,
+            torch_dtype=dtype,
+        ).to(device)
+    return model
+
+
 @hydra.main(version_base=None, config_name="train_schema")
 def main(cfg: TrainConfig) -> None:
     """Fine-tune a causal LM with LoRA on canonical Spider data via hf_mps.
@@ -90,11 +133,7 @@ def main(cfg: TrainConfig) -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(
-        cfg.model.base_model_id,
-        revision=cfg.model.revision,
-        torch_dtype=dtype,
-    ).to(device)
+    model = load_base_model(cfg, device, dtype)
 
     train_dataset, valid_dataset = load_canonical_datasets(cfg.data.train_path, cfg.data.valid_path)
     train_dataset = train_dataset.map(lambda example: format_example(example, tokenizer))

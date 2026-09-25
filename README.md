@@ -97,3 +97,9 @@ it at a specific trained run with an override, since adapter output directories 
   sample.size=10
 ```
 
+## Using Docker on a Cloud Instance
+NB! Currently untested. 
+
+
+
+

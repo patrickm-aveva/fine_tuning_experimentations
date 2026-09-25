@@ -78,6 +78,24 @@ class TrainHParams:
 
 
 @dataclass
+class QuantizationConfig:
+    """Optional CUDA-only 4-bit quantization (QLoRA) settings.
+
+    Attributes:
+        enabled: Whether to load the base model quantized via bitsandbytes.
+            Requires a CUDA device and the `cuda` extra; never enable on MPS/CPU.
+        load_in_4bit: Whether to load in 4-bit precision.
+        bnb_4bit_quant_type: Quantization data type, e.g. "nf4" or "fp4".
+        bnb_4bit_use_double_quant: Whether to use nested (double) quantization.
+    """
+
+    enabled: bool = False
+    load_in_4bit: bool = True
+    bnb_4bit_quant_type: str = "nf4"
+    bnb_4bit_use_double_quant: bool = True
+
+
+@dataclass
 class OutputConfig:
     """Output locations for adapter artifacts.
 
@@ -98,6 +116,7 @@ class TrainConfig:
         data: Canonical dataset paths.
         train: Trainer hyperparameters.
         output: Output artifact locations.
+        quantization: Optional CUDA-only QLoRA settings.
     """
 
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -105,6 +124,7 @@ class TrainConfig:
     data: DataConfig = field(default_factory=DataConfig)
     train: TrainHParams = field(default_factory=TrainHParams)
     output: OutputConfig = field(default_factory=OutputConfig)
+    quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
 
 
 def register_train_configs(store: ConfigStore) -> None:
