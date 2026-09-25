@@ -100,6 +100,12 @@ it at a specific trained run with an override, since adapter output directories 
 ## Using Docker on a Cloud Instance
 NB! Currently untested. 
 
+## Cloud GPU setup (EC2)
+
+For running fine-tuning on an NVIDIA GPU EC2 instance instead of Docker, see
+[docs/ec2_gpu_python_setup.md](docs/ec2_gpu_python_setup.md) for the full walkthrough (SSH access,
+NVIDIA driver install, `uv`-managed Python env, GPU-enabled PyTorch, verification).
+
 
 
 
