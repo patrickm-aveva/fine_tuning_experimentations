@@ -47,6 +47,9 @@ mlx = [
     "mlx-lm[train]",
     "safetensors",
 ]
+cuda = [
+    "bitsandbytes",
+]
 
 [project.scripts]
 fine-tuning-experimentations = "fine_tuning_experimentations:main"
